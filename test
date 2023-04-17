@@ -1,0 +1,99 @@
+import win32com.client
+import pandas as pd
+import os
+
+class  Outlook():
+    def __init__(self, email_add):
+        self.email_add = email_add
+
+    def run_ol_Script(self, outdest ="C:\excel_automation", 
+                    search_mail_sub="reserving time: CTP All-hands"
+                    ):
+        outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
+        outbox = outlook.Folders(self.email_add)
+        outdest = os.path.normpath(outdest)
+
+        for olreadfolder in outbox.Folders:
+            messages = olreadfolder.Items
+            if len(messages) == 0: 
+                #print('No emails found in folder [{}]'.format(olreadfolder))
+                #return 'Empty folder [{}]'.format(olreadfolder), None
+                continue
+            matched_msgs = []
+
+            # Collecting all the matched mails based on subject for further Sorting
+            for msg in list(messages):
+                if search_mail_sub.lower() ==  msg.Subject.lower():
+                    temp_tup =[msg,msg.CreationTime]
+                    matched_msgs.append(temp_tup)
+            if not matched_msgs:
+                #return f'No Expected mail found in folded: {olreadfolder}', None
+                continue
+
+            # Collecting the latest and most recent mail  out of duplicate Mails   
+            while len(matched_msgs)>0:
+                count = 0
+                try:
+                    if matched_msgs[count][1]>matched_msgs[count+1][1]:
+                        matched_msgs.pop(count+1)              
+                    else:
+                        matched_msgs.pop(count)
+                except:
+                    break
+            # Downloading the attachment
+            b_processed = False
+            print("************************************")
+            print(f'Subject of expected mail : {matched_msgs[0][0].Subject}')
+            print(f'Date of The Attached data : {matched_msgs[0][0].CreationTime}')
+            if matched_msgs[0][0].Attachments:
+                for atmt in matched_msgs[0][0].Attachments:
+                    temp_filename = os.path.normpath(os.path.join(outdest, f'{atmt.FileName}'))
+                    try:
+                        atmt.SaveAsFile(temp_filename)
+                        print('File Successfully Saved [{}]'.format(temp_filename))
+                        b_processed = True
+                        break
+                    except Exception as e:
+                        print(str(e) + ' | File NOT saved [{}]'.format(temp_filename))
+            if b_processed:
+                return 'Succesfully processed emails!', temp_filename
+
+            return f'No Attachment found for {matched_msgs[0][0].Subject}',  None
+
+    def delete_files(self,  dirr):
+        test=os.listdir(dirr)
+        for item in test:
+            if item:
+                print(f"removing : [{dirr}{item}]")
+                os.remove(dirr+item)
+
+    def handling_dir(self, directorys):
+        for dirr in directorys:
+            if not os.path.exists(f"C:\excel_automation\\"):
+                os.makedirs(f"C:\excel_automation\\")
+            if not os.path.exists(f"C:\excel_automation\{dirr}\\"):
+                os.makedirs(f"C:\excel_automation\{dirr}\\")
+            self.delete_files(f"C:\excel_automation\{dirr}\\")
+
+    def concat_csv(self, read_dir):
+        if not os.path.exists(read_dir):
+            print(f"read dir : {read_dir} does not exist")
+            return f"read dir : {read_dir} does not exist"
+        files = os.listdir(read_dir)
+        df = pd.DataFrame()
+        for file in files:
+            if file.endswith(".csv"):
+                data = pd.read_csv(read_dir+file)
+                df = pd.concat([df, data])
+        df.to_csv(read_dir+'merged_files.csv', index=False)
+        os.remove(read_dir+file)
+
+
+directorys = ['ACH','ACH','ACH','ACH','Checks','External','Internal','Platform']
+subjects = ['ACH-a','ACH-b','ACH-c','ACH','Checks','External','Internal','Platform']    
+outlook = Outlook("ashish_sharma5@epam.com")
+outlook.handling_dir(directorys)
+for subs, dirr in zip(subjects, directorys):
+    resu, file = outlook.run_ol_Script(outdest = f"C:\excel_automation\{dirr}\\", search_mail_sub=subs)
+    if "Succes" in resu:
+        result = outlook.concat_csv(f"C:\excel_automation\{dirr}\\")
